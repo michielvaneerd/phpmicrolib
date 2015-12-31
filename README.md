@@ -1,24 +1,46 @@
 # PHPMICROLIB
 
-A collection of simple to use, lightweight PHP files that solve common scenario's like templating, routing and database-model mapping. The purpose of these collection is to be focused on one particular problem and to be independant of other files so they can be used by simply requiring them. They also try to keep as close to *normal* PHP as possible, for example the routes in the router are *normal* PHP regular expressions. This way you can keep using your knownledge of PHP and keep learning.
+Simple to understand and lightweight files that handle scenario's like routing, templating and ORM.
+
+Below you find some getting started information. For more complete and advanced use cases, see the example.
 
 ## Routing
 
-* The first part of the route is the name of the controller. For example `/customers/12/orders` maps to the CustomersController in the CustomersController.php file.
-* The controller maps one or more routes to methods.
-* The controller evaluates the route and the first match will be executed.
-* Only when this match returns `false`, the next one is also evaluated and executed if it matches. This way you can secure for example an admin area easily. See example below.
-
-Simple example:
+Start the routing by placing this code into the front controller:
 
 ```php
-class AdminController extends \PHPMICROLIB\Router\Controller {
+require_once('router.inc.php');
+Route::initialize();
+try {
+  Route::handleRoute('controllers'); // directory of controllers as argument
+} catch (Exception $ex) {
+  // Handle exception
+}
+```
+
+And then create some controllers.
+
+Some controller properties:
+
+* The name of the controller is determined by the first part of the route. For example `/customers` and `/customers/123/orders` both will use the `CustomersController` in the `CustomersController.php` file.
+* Inside the controller, map all the routes to functions.
+
+__Example 1:__
+
+```php
+class CustomersController extends \PHPMICROLIB\Router\Controller {
 
   function __construct() {
     parent::__construct(array(
-      // route /customers
       '@^customers$@' => 'showCustomers',
-      // possible route: /customers/123
+      '@^customers/new$@' => array(
+        'get' => function() {
+          die('Show form to create new customer');
+        },
+        'post' => function() {
+          die('Create a new customer based on the POST request');
+        }
+      ),
       '@^admin/customers/(?<id>\d+)$@' => array(
         'get'=> 'editCustomer',
         'post' => 'updateCustomer'
@@ -41,7 +63,41 @@ class AdminController extends \PHPMICROLIB\Router\Controller {
 }
 ```
 
-Example of handing over to other controllers and securing a path:
+__Example 2 - handover control to another controller:__
+
+File CustomersController.php:
+```php
+class CustomersController extends \PHPMICROLIB\Router\Controller {
+
+  function __construct() {
+    parent::__construct(array(
+      '@^customers/(?<id>\d+)$@' => 'editCustomer',
+      '@^customers/(?<id>\d+)/orders\b@' => function() {
+        self::handleRoute('OrdersController');
+      }
+    ));
+  }
+
+}
+```
+
+File OrdersController.php:
+```php
+class OrdersController extends \PHPMICROLIB\Router\Controller {
+
+  function __construct() {
+    parent::__construct(array(
+      '@^customers/(?<id>\d+)$@' => 'editCustomer',
+      '@^customers/(?<id>\d+)/orders\b@' => function() {
+        self::handleRoute('OrdersController');
+      }
+    ));
+  }
+
+}
+```
+
+__Example 3 - secure admin area:__
 
 ```php
 class AdminController extends \PHPMICROLIB\Router\Controller {
@@ -59,10 +115,6 @@ class AdminController extends \PHPMICROLIB\Router\Controller {
         // User is logged in.
         // Return false, so the next route is also evaluated.
         return false;
-      },
-      // route: /admin/customers
-      '@^admin/customers\b@' => function() {
-        self::handleRoute('CustomersController');
       }
     ));
   }
@@ -70,23 +122,115 @@ class AdminController extends \PHPMICROLIB\Router\Controller {
 }
 ```
 
-To start using the router, create the controllers you need and call the code below from within your front controller:
-
-```php
-require_once('router.inc.php');
-Route::initialize();
-// After initialize you can query some things, like the parts of the route
-// This way you can for example handle some routes different than others.
-try {
-  Route::handleRoute('controllers'); // directory of controllers as argument
-} catch (Exception $ex) {
-  // Handle exception
-}
-```
-
 ## Templating
 
+__Example 1:__
+
+PHP file that fills the template:
+```php
+require_once('template.inc.php');
+$tpl = new Template('/path/to/template.tlp.php');
+$tpl->set('title', 'Template file');
+$tpl->set('customers', array('Pete', 'Carl', 'Mitch'));
+die($tpl->parse());
+```
+
+Template file (this is in fact just a regular PHP file):
+```html
+<html>
+  <head>
+    <title><?php echo $this->esc($title); ?></title>
+  </head>
+  <body>
+    <ul>
+    <?php foreach ($customers as $customer): ?>
+      <li><?php echo $this->esc($customer); ?></li>
+    <?php endforeach; ?>
+    </ul>
+  </body>
+</html>
+```
 
 
 ## Database mapping
 
+The `PDOModel` class maps PHP models to database models and in reverse. To use it, define a PHP class and an accompanying `PDOModel` instance.
+
+__Example 1:__
+```php
+require_once('database.inc.php');
+
+class Customer {
+  public $id;
+  public $username;
+  public $pwd;
+}
+
+class PDOCustomer extends PDOmodel {
+  protected $className = 'Customer';
+  
+  public function getAll() {
+    return $this->getCollection($this->selectQuery);
+  }
+  
+}
+```
+
+__Example 2 - encryption:__
+```php
+require_once('crypt.inc.php');
+
+// Of course don't define it like this in production :-)
+define('SECRET_KEY', '03f731f951edd35c4917d644f8484b6e');
+
+class Customer {
+  public $id;
+  public $username;
+  public $pwd;
+  public $email;
+}
+
+class PDOCustomer extends PDOmodel {
+  protected $className = 'Customer';
+  protected $encryptedProperties = ['email'];
+  
+  function __construct() {
+    parent::__construct();
+    $this->setCrypt(new Crypt(SECRET_KEY));
+  }
+  
+  public function getAll() {
+    return $this->getCollection($this->selectQuery);
+  }
+  
+}
+```
+
+__Example 3 - model has properties from other tables:__
+By default the `PDOModel` will select all properties of the model from the table. If you use properties on the model that are not in the table, you have to define a select query for yourself and put these non-table properties into the foreignProperties array.
+
+```php
+class Customer {
+  public $id;
+  public $username;
+  public $pwd;
+  public $firstname;
+  // Property not in table:
+  public $street;
+}
+
+class PDOCustomer extends PDOmodel {
+  
+  protected $className = 'Customer';
+  protected $foreignProperties = ['street'];
+  protected $selectQuery = "SELECT c.*, a.street
+      FROM customer AS c
+      LEFT JOIN address AS a
+        ON a.customer_id = c.id";
+  
+  public function getAll() {
+    return $this->getCollection($this->selectQuery);
+  }
+  
+}
+```

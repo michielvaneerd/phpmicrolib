@@ -1,5 +1,11 @@
 <?php
 
+use \PHPMICROLIB\Database\Crypt;
+use \PHPMICROLIB\Database\PDOModel;
+use \PHPMICROLIB\Router\Route;
+
+require_once(Route::getFrontControllerDir() . '/../src/crypt.inc.php');
+
 // Properties moeten public zijn!
 // Want de map functie zet deze.
 // Ook mooier om hier aparte functies van te maken, zodat de Customer
